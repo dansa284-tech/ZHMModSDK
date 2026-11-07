@@ -9,6 +9,9 @@ on:
     pull_request:
         types: [ opened, synchronize, reopened ]
 
+permissions:
+    contents: write
+
 jobs:
     build:
         name: Build
@@ -120,6 +123,20 @@ jobs:
                 with:
                     name: ZHMModSDK-Release
                     path: _dist-release/*
+
+            -   name: Zip release build for GitHub release (forks only)
+                if: github.repository != 'OrfeasZ/ZHMModSDK'
+                shell: powershell
+                run: Compress-Archive -Path _dist-release\* -DestinationPath ZHMModSDK-Release.zip
+
+            -   name: Publish release build as a GitHub release (forks only)
+                if: github.repository != 'OrfeasZ/ZHMModSDK'
+                uses: softprops/action-gh-release@v2
+                with:
+                    tag_name: persistent-cheats-build-${{ github.run_number }}
+                    name: Persistent cheats build ${{ github.run_number }}
+                    body: ZHMModSDK release build with the persistent-cheats Player mod (invincible / invisible / infinite ammo remembered between missions).
+                    files: ZHMModSDK-Release.zip
 
             -   name: Archive release PDBs
                 uses: actions/upload-artifact@v4
