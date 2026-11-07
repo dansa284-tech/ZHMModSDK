@@ -58,7 +58,7 @@ void Player::LoadPersistentSettings() {
     m_SavedInfiniteAmmo = GetSettingBool("persistent", "infinite_ammo", false);
 }
 
-void Player::OnFrameUpdate(const SGameUpdateEvent& p_UpdateEvent) {
+void Player::ApplyPersistentPlayerFlags() {
     if (!m_PersistCheats) {
         return;
     }
@@ -83,9 +83,31 @@ void Player::OnFrameUpdate(const SGameUpdateEvent& p_UpdateEvent) {
         }
     }
 
+    // The game clears m_bIsHiding itself (it's the "inside a container" flag), so
+    // this is called from several hooks per frame to make sure we get the last word.
     if (m_SavedInvisible && !s_Hitman->m_bIsHiding) {
         s_Hitman->m_bIsHiding = true;
     }
+}
+
+void Player::OnFrameUpdate(const SGameUpdateEvent& p_UpdateEvent) {
+    if (!m_PersistCheats) {
+        return;
+    }
+
+    auto s_LocalHitman = SDK()->GetLocalPlayer();
+
+    if (!s_LocalHitman) {
+        return;
+    }
+
+    ZHitman5* s_Hitman = s_LocalHitman.m_pInterfaceRef;
+
+    if (!s_Hitman) {
+        return;
+    }
+
+    ApplyPersistentPlayerFlags();
 
     if (m_SavedInfiniteAmmo && !m_HM5CrippleBoxEntity) {
         // The cripple box entity is destroyed on every scene clear, so respawn it
@@ -139,6 +161,10 @@ void Player::OnDrawUI(const bool p_HasFocus) {
         }
 
         ImGui::EndDisabled();
+
+        if (m_PersistCheats && m_SavedInvisible && s_Hitman && !s_Hitman->m_bIsHiding) {
+            s_Hitman->m_bIsHiding = true;
+        }
 
         bool s_IsInvisible = s_Hitman ? s_Hitman->m_bIsHiding : false;
 
@@ -662,6 +688,8 @@ DEFINE_PLUGIN_DETOUR(
     ZSecuritySystemCameraManager* th,
     const SGameUpdateEvent& updateEvent
 ) {
+    ApplyPersistentPlayerFlags();
+
     auto s_LocalHitman = SDK()->GetLocalPlayer();
 
     if (s_LocalHitman && s_LocalHitman.m_pInterfaceRef->m_bIsHiding) {
@@ -678,6 +706,8 @@ DEFINE_PLUGIN_DETOUR(
     ZSecuritySystemCamera* th,
     const SGameUpdateEvent& updateEvent
 ) {
+    ApplyPersistentPlayerFlags();
+
     auto s_LocalHitman = SDK()->GetLocalPlayer();
 
     if (s_LocalHitman && s_LocalHitman.m_pInterfaceRef->m_bIsHiding) {
@@ -820,6 +850,8 @@ DEFINE_PLUGIN_DETOUR(Player, bool, ZHM5ItemWeapon_IsFiring, IFirearm* th) {
 }
 
 DEFINE_PLUGIN_DETOUR(Player, bool, ZActor_YouGotHit, IBaseCharacter* th, const SHitInfo& hitInfo) {
+    ApplyPersistentPlayerFlags();
+
     if (m_IsOneHitKillEnabled) {
         ZActor* s_Actor = static_cast<ZActor*>(th);
 
