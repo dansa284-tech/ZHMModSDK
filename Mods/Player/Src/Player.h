@@ -8,9 +8,14 @@ class ZGlobalOutfitKit;
 class ZHitman5;
 class ZHM5CrippleBox;
 
+class SGameUpdateEvent;
+
 class Player : public IPluginInterface {
 public:
+    ~Player() override;
+
     void Init() override;
+    void OnEngineInitialized() override;
     void OnDrawMenu() override;
     void OnDrawUI(bool p_HasFocus) override;
 
@@ -22,6 +27,11 @@ private:
 
     void ToggleInfiniteAmmo();
     bool CreateHM5CrippleBoxEntity();
+
+    // Persistent cheats: re-applies the saved toggles every frame so they
+    // survive mission loads, restarts and Freelancer campaign transitions.
+    void OnFrameUpdate(const SGameUpdateEvent& p_UpdateEvent);
+    void LoadPersistentSettings();
 
     DECLARE_PLUGIN_DETOUR(Player, void, OnClearScene, ZEntitySceneContext* th, bool p_FullyUnloadScene);
 
@@ -73,6 +83,13 @@ private:
     bool m_IsSuperAccuracyEnabled = false;
     bool m_IsRapidFireEnabled = false;
     bool m_IsOneHitKillEnabled = false;
+
+    // Saved (persistent) cheat state, stored in the SDK's plugin settings INI.
+    bool m_PersistCheats = true;
+    bool m_SavedInvincible = false;
+    bool m_SavedInvisible = false;
+    bool m_SavedInfiniteAmmo = false;
+    uint32_t m_InfiniteAmmoRetryCounter = 0;
 
     const std::vector<std::string> m_CharSetCharacterTypes = { "Actor", "Nude", "HeroA" };
 
