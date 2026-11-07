@@ -32,6 +32,7 @@ private:
     // survive mission loads, restarts and Freelancer campaign transitions.
     void OnFrameUpdate(const SGameUpdateEvent& p_UpdateEvent);
     void LoadPersistentSettings();
+    void ApplyPersistentPlayerFlags();
 
     DECLARE_PLUGIN_DETOUR(Player, void, OnClearScene, ZEntitySceneContext* th, bool p_FullyUnloadScene);
 
