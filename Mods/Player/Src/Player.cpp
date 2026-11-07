@@ -12,12 +12,21 @@
 #include <Glacier/ZModule.h>
 #include <Glacier/ZItem.h>
 #include <Glacier/SExternalReferences.h>
+#include <Glacier/ZGameLoopManager.h>
+#include <Glacier/SGameUpdateEvent.h>
 
 #include <Util/ImGuiUtils.h>
 
 #undef min
 
+Player::~Player() {
+    const ZMemberDelegate<Player, void(const SGameUpdateEvent&)> s_Delegate(this, &Player::OnFrameUpdate);
+    Globals::GameLoopManager->UnregisterFrameUpdate(s_Delegate, 0, EUpdateMode::eUpdatePlayMode);
+}
+
 void Player::Init() {
+    LoadPersistentSettings();
+
     Hooks::ZEntitySceneContext_ClearScene->AddDetour(this, &Player::OnClearScene);
 
     Hooks::ZSecuritySystemCameraManager_OnFrameUpdate->AddDetour(
@@ -35,6 +44,63 @@ void Player::Init() {
     Hooks::ZHM5ItemWeapon_FireProjectiles->AddDetour(this, &Player::ZHM5ItemWeapon_FireProjectiles);
     Hooks::ZHM5ItemWeapon_IsFiring->AddDetour(this, &Player::ZHM5ItemWeapon_IsFiring);
     Hooks::ZActor_YouGotHit->AddDetour(this, &Player::ZActor_YouGotHit);
+}
+
+void Player::OnEngineInitialized() {
+    const ZMemberDelegate<Player, void(const SGameUpdateEvent&)> s_Delegate(this, &Player::OnFrameUpdate);
+    Globals::GameLoopManager->RegisterFrameUpdate(s_Delegate, 0, EUpdateMode::eUpdatePlayMode);
+}
+
+void Player::LoadPersistentSettings() {
+    m_PersistCheats = GetSettingBool("persistent", "enabled", true);
+    m_SavedInvincible = GetSettingBool("persistent", "invincible", false);
+    m_SavedInvisible = GetSettingBool("persistent", "invisible", false);
+    m_SavedInfiniteAmmo = GetSettingBool("persistent", "infinite_ammo", false);
+}
+
+void Player::OnFrameUpdate(const SGameUpdateEvent& p_UpdateEvent) {
+    if (!m_PersistCheats) {
+        return;
+    }
+
+    auto s_LocalHitman = SDK()->GetLocalPlayer();
+
+    if (!s_LocalHitman) {
+        return;
+    }
+
+    ZHitman5* s_Hitman = s_LocalHitman.m_pInterfaceRef;
+
+    if (!s_Hitman) {
+        return;
+    }
+
+    if (m_SavedInvincible) {
+        ZHM5Health* s_Health = s_Hitman->m_pHealth;
+
+        if (s_Health && !s_Health->m_bInvincible.Get()) {
+            s_Health->m_bInvincible.Set(true);
+        }
+    }
+
+    if (m_SavedInvisible && !s_Hitman->m_bIsHiding) {
+        s_Hitman->m_bIsHiding = true;
+    }
+
+    if (m_SavedInfiniteAmmo && !m_HM5CrippleBoxEntity) {
+        // The cripple box entity is destroyed on every scene clear, so respawn it
+        // once the new scene (and 47) are up. Retry periodically rather than every
+        // frame in case the resource isn't loaded yet.
+        if (m_InfiniteAmmoRetryCounter == 0) {
+            m_IsInfiniteAmmoEnabled = true;
+            ToggleInfiniteAmmo();
+        }
+
+        m_InfiniteAmmoRetryCounter = (m_InfiniteAmmoRetryCounter + 1) % 30;
+    }
+    else {
+        m_InfiniteAmmoRetryCounter = 0;
+    }
 }
 
 void Player::OnDrawMenu() {
@@ -68,6 +134,8 @@ void Player::OnDrawUI(const bool p_HasFocus) {
 
         if (ImGui::Checkbox("Is invincible", &s_IsInvincible)) {
             s_Health->m_bInvincible.Set(s_IsInvincible);
+            m_SavedInvincible = s_IsInvincible;
+            SetSettingBool("persistent", "invincible", m_SavedInvincible);
         }
 
         ImGui::EndDisabled();
@@ -76,10 +144,25 @@ void Player::OnDrawUI(const bool p_HasFocus) {
 
         if (ImGui::Checkbox("Is invisible", &s_IsInvisible)) {
             s_Hitman->m_bIsHiding = s_IsInvisible;
+            m_SavedInvisible = s_IsInvisible;
+            SetSettingBool("persistent", "invisible", m_SavedInvisible);
         }
 
         if (ImGui::Checkbox("Infinite ammo", &m_IsInfiniteAmmoEnabled)) {
             ToggleInfiniteAmmo();
+            m_SavedInfiniteAmmo = m_IsInfiniteAmmoEnabled;
+            SetSettingBool("persistent", "infinite_ammo", m_SavedInfiniteAmmo);
+        }
+
+        if (ImGui::Checkbox("Keep cheats on between missions", &m_PersistCheats)) {
+            SetSettingBool("persistent", "enabled", m_PersistCheats);
+        }
+
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(
+                "Remembers invincible / invisible / infinite ammo and re-applies them\n"
+                "automatically every time 47 spawns into a level (Freelancer included)."
+            );
         }
 
         ImGui::Checkbox("No reload", &m_IsNoReloadEnabled);
